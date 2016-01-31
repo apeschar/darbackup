@@ -61,7 +61,7 @@ ts=$(date +%Y%m%dT%H%M%S)
 
 dar ${dar_options[@]} |
     $pv |
-    aws s3 cp --storage-class $s3_storage_class - s3://$s3_bucket/$backup_name.$ts.$backup_type.dar
+    aws s3 cp --storage-class $s3_storage_class - s3://$s3_bucket/$backup_name.$ts.$backup_type.1.dar
 
 # Save the catalogue file locally.
 mkdir -p $catalogue
