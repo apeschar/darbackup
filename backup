@@ -1,0 +1,70 @@
+#!/bin/bash
+
+set -eu
+set -o pipefail
+
+###
+# Configuration
+
+export AWS_ACCESS_KEY_ID=""
+export AWS_SECRET_ACCESS_KEY=""
+
+backup_name=$(uname -n)
+s3_bucket=kibo-bak-$backup_name
+
+catalogue=/var/log/dar
+root=/
+
+# STANDARD | REDUCED_REDUNDANCY | STANDARD_IA
+s3_storage_class=STANDARD
+
+exclude_paths=(
+    tmp
+    var/cache
+    var/lib/mysql
+    var/log/dar
+    var/tmp
+)
+
+###
+
+# Create a temporary directory to save the catalogue.
+tmp_catalogue=$(mktemp -d)
+trap "rm -rf '$tmp_catalogue'" EXIT
+
+# Generate options for dar.
+dar_options=( -c - -@ $tmp_catalogue/$backup_name.last -R $root )
+dar_options+=( -zbzip2 -Z '*.bz2' )
+dar_options+=( --no-mount-points --cache-directory-tagging -D )
+
+for path in ${exclude_paths[@]}; do
+    dar_options+=( -P "$path" )
+done
+
+# Be verbose if we're on a terminal.
+if [ -t 1 ]; then
+    pv="pv -W"
+else
+    pv=cat
+    dar_options+=( -q )
+fi
+
+# Make a full backup on the first day of the month, differential otherwise.
+if [[ $(date +%d) -eq 1 ]] || [[ ! -f $catalogue/$backup_name.last.1.dar ]]; then
+    backup_type=full
+else
+    backup_type=diff
+    dar_options+=( -A ${catalogue}/$backup_name.last )
+fi
+
+ts=$(date +%Y%m%dT%H%M%S)
+
+dar ${dar_options[@]} |
+    $pv |
+    aws s3 cp --storage-class $s3_storage_class - s3://$s3_bucket/$backup_name.$ts.$backup_type.dar
+
+# Save the catalogue file locally.
+mkdir -p $catalogue
+chmod 700 $catalogue
+mv $tmp_catalogue/$backup_name.last.1.dar $catalogue/
+cp $catalogue/$backup_name.last.1.dar $catalogue/$backup_name.$ts.$backup_type.1.dar
