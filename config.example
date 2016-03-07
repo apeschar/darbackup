@@ -1,0 +1,18 @@
+backup_name=$(uname -n)
+s3_bucket=kibo-bak-$backup_name
+
+catalogue=/var/log/dar
+root=/
+
+# STANDARD | REDUCED_REDUNDANCY | STANDARD_IA
+s3_storage_class=STANDARD
+
+exclude_paths=(
+    tmp
+    var/cache
+    var/lib/mysql
+    var/log/dar
+    var/tmp
+)
+
+# vim: set ft=sh :

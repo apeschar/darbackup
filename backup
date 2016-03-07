@@ -3,30 +3,12 @@
 set -eu
 set -o pipefail
 
-###
-# Configuration
+if [[ ! -f /etc/darbackup ]]; then
+    echo "Configuration file /etc/darbackup does not exist. Create it first." >&2
+    exit 1
+fi
 
-export AWS_ACCESS_KEY_ID=""
-export AWS_SECRET_ACCESS_KEY=""
-
-backup_name=$(uname -n)
-s3_bucket=kibo-bak-$backup_name
-
-catalogue=/var/log/dar
-root=/
-
-# STANDARD | REDUCED_REDUNDANCY | STANDARD_IA
-s3_storage_class=STANDARD
-
-exclude_paths=(
-    tmp
-    var/cache
-    var/lib/mysql
-    var/log/dar
-    var/tmp
-)
-
-###
+source /etc/darbackup
 
 # Create a temporary directory to save the catalogue.
 tmp_catalogue=$(mktemp -d)
@@ -59,9 +41,16 @@ fi
 
 ts=$(date +%Y%m%dT%H%M%S)
 
-dar ${dar_options[@]} |
-    $pv |
-    aws s3 cp --storage-class $s3_storage_class - s3://$s3_bucket/$backup_name.$ts.$backup_type.1.dar
+{
+    dar ${dar_options[@]}
+    status=$?
+    if [[ $status -eq 11 ]]; then
+        echo "Ignoring dar exit code $status..." >&2
+    elif [[ $status -ne 0 ]]; then
+        echo "dar exited with status $status. Aborting..." >&2
+        exit 1
+    fi
+} | $pv | aws s3 cp --storage-class $s3_storage_class - s3://$s3_bucket/$backup_name.$ts.$backup_type.1.dar
 
 # Save the catalogue file locally.
 mkdir -p $catalogue
